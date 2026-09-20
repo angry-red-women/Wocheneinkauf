@@ -1,5 +1,5 @@
-const CACHE='wocheneinkauf-v11';
-const FILES=['./','index.html','style.css?v=6','recipe-model.js?v=1','recipe-data.js?v=1','shopping-amounts.js?v=1','app.js?v=9','auth.js','manifest.json','icon.svg'];
+const CACHE='wocheneinkauf-v12';
+const FILES=['./','index.html','style.css?v=6','recipe-model.js?v=1','recipe-data.js?v=1','shopping-amounts.js?v=1','app.js?v=10','auth.js','manifest.json','icon.svg'];
 self.addEventListener('install',event=>{
   event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(FILES.map(url=>new Request(url,{cache:'reload'})))).then(()=>self.skipWaiting()));
 });

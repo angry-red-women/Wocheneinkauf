@@ -40,8 +40,29 @@ function addOopsieIngredients(){
   if(changed)syncMenuIngredients(false);
 }
 function migrate(){state.menu=state.menu||{};weekDays.forEach(day=>{if(!Object.prototype.hasOwnProperty.call(state.menu,day))state.menu[day]='';});addOopsieIngredients();state.recipes=state.recipes||{};if(!state.recipes['Kartoffelgratin mit Hackfleisch und Curry'])state.recipes['Kartoffelgratin mit Hackfleisch und Curry']=recipeGratin;if(state.meals['Kartoffelgratin mit Hackfleisch und Curry'])delete state.meals['Kartoffelgratin mit Hackfleisch und Curry']}
-function localSave(){localStorage.setItem('einkaufState',JSON.stringify(state))}async function cloudSave(){if(!cloudReady)return;const data=JSON.stringify(state);if(data===lastCloud)return;try{const r=await fetch(STATE_URL,{method:'PATCH',headers:{...API_HEADERS,'Prefer':'return=minimal'},body:JSON.stringify({data:state,updated_at:new Date().toISOString()})});if(!r.ok)throw new Error(await r.text());lastCloud=data}catch(e){console.error(e)}}function save(){localSave();clearTimeout(saveTimer);saveTimer=setTimeout(cloudSave,180)}
-async function loadCloud(){try{const r=await fetch(STATE_URL+'&select=data',{headers:API_HEADERS,cache:'no-store'}),rows=await r.json();if(rows[0]?.data&&Object.keys(rows[0].data).length)state=rows[0].data;migrate();lastCloud=JSON.stringify(state);cloudReady=true;localSave();syncMenuIngredients(false);renderAll();cloudSave()}catch(e){console.error(e);migrate();renderAll()}}async function pollCloud(){if(!cloudReady)return;try{const r=await fetch(STATE_URL+'&select=data,updated_at',{headers:API_HEADERS,cache:'no-store'}),rows=await r.json(),incoming=rows[0]?.data;if(incoming&&JSON.stringify(incoming)!==lastCloud){state=incoming;migrate();lastCloud=JSON.stringify(state);localSave();renderAll()}}catch(e){}}
+// Compare cloud data independently of JSON object key order.
+function cloudFingerprint(value){
+  if(Array.isArray(value))return '['+value.map(cloudFingerprint).join(',')+']';
+  if(value&&typeof value==='object')return '{'+Object.keys(value).sort().map(key=>JSON.stringify(key)+':'+cloudFingerprint(value[key])).join(',')+'}';
+  return JSON.stringify(value);
+}
+function menuSelectionActive(){return !!document.activeElement?.closest('#weekMenu select');}
+function localSave(){localStorage.setItem('einkaufState',JSON.stringify(state))}async function cloudSave(){if(!cloudReady)return;const data=cloudFingerprint(state);if(data===lastCloud)return;try{const r=await fetch(STATE_URL,{method:'PATCH',headers:{...API_HEADERS,'Prefer':'return=minimal'},body:JSON.stringify({data:state,updated_at:new Date().toISOString()})});if(!r.ok)throw new Error(await r.text());lastCloud=data}catch(e){console.error(e)}}function save(){localSave();clearTimeout(saveTimer);saveTimer=setTimeout(cloudSave,180)}
+async function loadCloud(){try{const r=await fetch(STATE_URL+'&select=data',{headers:API_HEADERS,cache:'no-store'}),rows=await r.json();if(rows[0]?.data&&Object.keys(rows[0].data).length)state=rows[0].data;lastCloud=cloudFingerprint(state);migrate();cloudReady=true;localSave();syncMenuIngredients(false);renderAll();cloudSave()}catch(e){console.error(e);migrate();renderAll()}}async function pollCloud(){
+  if(!cloudReady||menuSelectionActive())return;
+  const before=cloudFingerprint(state);
+  try{
+    const r=await fetch(STATE_URL+'&select=data,updated_at',{headers:API_HEADERS,cache:'no-store'});
+    const rows=await r.json(),incoming=rows[0]?.data;
+    // A selection or edit may have started while the request was in flight.
+    if(menuSelectionActive()||cloudFingerprint(state)!==before)return;
+    if(incoming&&cloudFingerprint(incoming)!==lastCloud){
+      lastCloud=cloudFingerprint(incoming);
+      state=incoming;migrate();syncMenuIngredients(false);localSave();renderAll();
+    }
+  }catch(e){}
+}
+
 function catFor(n){let s=n.toLowerCase();if(/hack|poulet|wienerli|schinken|bratwurst|fleisch/.test(s))return'Fleisch & Fisch';if(/salat|zwiebel|kartoffel|champignon|jalape|trauben|kiwi|pfirsich|heidel|gurke|tomate/.test(s))return'Früchte & Gemüse';if(/käse|mozzarella|cheddar|rahm|philadelphia|ei|milch|joghurt|butter/.test(s))return'Kühlregal';if(/brot|gipfeli|toast/.test(s))return'Brot';if(/tk |pommes|findus/.test(s))return'Tiefkühl';return'Vorrat'}
 function parseIng(v){if(typeof v==='object'&&v)return{name:(v.name||'').trim(),qty:Number(v.qty)||0,unit:(v.unit||'').trim()};let s=String(v||'').trim(),m=s.match(/^([0-9]+(?:[.,][0-9]+)?)\s*(kg|g|mg|l|dl|cl|ml|stk\.?|stück|EL|TL|Bund|Dose|Dosen|Packung|Packungen|Becher|Scheibe|Scheiben|Zehe|Zehen|Prise|Prisen|x|×)\s+(.+)$/i);return m?{name:m[3].trim(),qty:Number(m[1].replace(',','.')),unit:m[2]}:{name:s,qty:0,unit:''}}
 function normUnit(u){let x=u.toLowerCase().replace('.','');return x==='stück'?'stk':x==='dosen'?'dose':x==='packungen'?'packung':x==='scheiben'?'scheibe':x==='zehen'?'zehe':x==='prisen'?'prise':x==='×'?'x':x}
